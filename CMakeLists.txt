@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(vllm_extensions LANGUAGES CXX)
 
 option(VLLM_TARGET_DEVICE "Target device backend for vLLM" "cuda")
+option(VLLM_GPU_ARCHES "Architectures to build for vLLM")
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Target device: ${VLLM_TARGET_DEVICE}")
