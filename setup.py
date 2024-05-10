@@ -19,11 +19,9 @@ logger = logging.getLogger(__name__)
 VLLM_TARGET_DEVICE = os.getenv("VLLM_TARGET_DEVICE", "cuda")
 VLLM_GPU_ARCHES = os.getenv("VLLM_GPU_ARCHES")
 
-
 # vLLM only supports Linux platform
 assert sys.platform.startswith(
-    "linux"
-), "vLLM only supports Linux platform (including WSL)."
+    "linux"), "vLLM only supports Linux platform (including WSL)."
 
 MAIN_CUDA_VERSION = "12.1"
 
@@ -42,7 +40,7 @@ def is_ninja_available() -> bool:
 
 def remove_prefix(text, prefix):
     if text.startswith(prefix):
-        return text[len(prefix) :]
+        return text[len(prefix):]
     return text
 
 
@@ -84,10 +82,8 @@ class cmake_build_ext(build_ext):
             nvcc_threads = os.getenv("NVCC_THREADS", None)
             if nvcc_threads is not None:
                 nvcc_threads = int(nvcc_threads)
-                logger.info(
-                    f"Using NVCC_THREADS={nvcc_threads} as the number"
-                    " of nvcc threads."
-                )
+                logger.info(f"Using NVCC_THREADS={nvcc_threads} as the number"
+                            " of nvcc threads.")
             else:
                 nvcc_threads = 1
             num_jobs = max(1, num_jobs // nvcc_threads)
@@ -112,7 +108,8 @@ class cmake_build_ext(build_ext):
 
         # where .so files will be written, should be the same for all extensions
         # that use the same CMakeLists.txt.
-        outdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        outdir = os.path.abspath(
+            os.path.dirname(self.get_ext_fullpath(ext.name)))
 
         cmake_args = [
             "-DCMAKE_BUILD_TYPE={}".format(cfg),
