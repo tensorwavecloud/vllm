@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     VLLM_USE_RAY_COMPILED_DAG: bool = False
     VLLM_WORKER_MULTIPROC_METHOD: str = "spawn"
     VLLM_TARGET_DEVICE: str = "cuda"
+    VLLM_GPU_ARCHES: Optional[str] = None
     MAX_JOBS: Optional[str] = None
     NVCC_THREADS: Optional[str] = None
     VLLM_BUILD_WITH_NEURON: bool = False
@@ -42,46 +43,39 @@ if TYPE_CHECKING:
 # begin-env-vars-definition
 
 environment_variables: Dict[str, Callable[[], Any]] = {
-
     # ================== Installation Time Env Vars ==================
-
     # Target device of vLLM, supporting [cuda (by default), rocm, neuron, cpu]
     "VLLM_TARGET_DEVICE":
     lambda: os.getenv("VLLM_TARGET_DEVICE", "cuda"),
-
+    # Explicitly set target GPU architectures to build
+    "VLLM_GPU_ARCHES":
+    lambda: os.getenv("VLLM_GPU_ARCHES", None),
     # Maximum number of compilation jobs to run in parallel.
     # By default this is the number of CPUs
     "MAX_JOBS":
     lambda: os.getenv("MAX_JOBS", None),
-
     # Number of threads to use for nvcc
     # By default this is 1.
     # If set, `MAX_JOBS` will be reduced to avoid oversubscribing the CPU.
     "NVCC_THREADS":
     lambda: os.getenv("NVCC_THREADS", None),
-
     # If set, vllm will build with Neuron support
     "VLLM_BUILD_WITH_NEURON":
     lambda: bool(os.environ.get("VLLM_BUILD_WITH_NEURON", False)),
-
     # If set, vllm will use precompiled binaries (*.so)
     "VLLM_USE_PRECOMPILED":
     lambda: bool(os.environ.get("VLLM_USE_PRECOMPILED")),
-
     # If set, vllm will install Punica kernels
     "VLLM_INSTALL_PUNICA_KERNELS":
     lambda: bool(int(os.getenv("VLLM_INSTALL_PUNICA_KERNELS", "0"))),
-
     # CMake build type
     # If not set, defaults to "Debug" or "RelWithDebInfo"
     # Available options: "Debug", "Release", "RelWithDebInfo"
     "CMAKE_BUILD_TYPE":
     lambda: os.getenv("CMAKE_BUILD_TYPE"),
-
     # If set, vllm will print verbose logs during installation
     "VERBOSE":
-    lambda: bool(int(os.getenv('VERBOSE', '0'))),
-
+    lambda: bool(int(os.getenv("VERBOSE", "0"))),
     # Root directory for VLLM configuration files
     # Note that this not only affects how vllm finds its configuration files
     # during runtime, but also affects how vllm installs its configuration
@@ -89,60 +83,47 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "VLLM_CONFIG_ROOT":
     lambda: os.environ.get("VLLM_CONFIG_ROOT", None) or os.getenv(
         "XDG_CONFIG_HOME", None) or os.path.expanduser("~/.config"),
-
     # ================== Runtime Env Vars ==================
-
     # used in distributed environment to determine the master address
-    'VLLM_HOST_IP':
-    lambda: os.getenv('VLLM_HOST_IP', "") or os.getenv("HOST_IP", ""),
-
+    "VLLM_HOST_IP":
+    lambda: os.getenv("VLLM_HOST_IP", "") or os.getenv("HOST_IP", ""),
     # If true, will load models from ModelScope instead of Hugging Face Hub.
     # note that the value is true or false, not numbers
     "VLLM_USE_MODELSCOPE":
     lambda: os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true",
-
     # Instance id represents an instance of the VLLM. All processes in the same
     # instance should have the same instance id.
     "VLLM_INSTANCE_ID":
     lambda: os.environ.get("VLLM_INSTANCE_ID", None),
-
     # path to cudatoolkit home directory, under which should be bin, include,
     # and lib directories.
     "CUDA_HOME":
     lambda: os.environ.get("CUDA_HOME", None),
-
     # Path to the NCCL library file. It is needed because nccl>=2.19 brought
     # by PyTorch contains a bug: https://github.com/NVIDIA/nccl/issues/1234
     "VLLM_NCCL_SO_PATH":
     lambda: os.environ.get("VLLM_NCCL_SO_PATH", None),
-
     # when `VLLM_NCCL_SO_PATH` is not set, vllm will try to find the nccl
     # library file in the locations specified by `LD_LIBRARY_PATH`
     "LD_LIBRARY_PATH":
     lambda: os.environ.get("LD_LIBRARY_PATH", None),
-
     # flag to control if vllm should use triton flash attention
     "VLLM_USE_TRITON_FLASH_ATTN":
     lambda: (os.environ.get("VLLM_USE_TRITON_FLASH_ATTN", "True").lower() in
              ("true", "1")),
-
     # local rank of the process in the distributed setting, used to determine
     # the GPU device id
     "LOCAL_RANK":
     lambda: int(os.environ.get("LOCAL_RANK", "0")),
-
     # used to control the visible devices in the distributed setting
     "CUDA_VISIBLE_DEVICES":
     lambda: os.environ.get("CUDA_VISIBLE_DEVICES", None),
-
     # timeout for each iteration in the engine
     "VLLM_ENGINE_ITERATION_TIMEOUT_S":
     lambda: int(os.environ.get("VLLM_ENGINE_ITERATION_TIMEOUT_S", "60")),
-
     # API key for VLLM API server
     "VLLM_API_KEY":
     lambda: os.environ.get("VLLM_API_KEY", None),
-
     # S3 access information, used for tensorizer to load model from S3
     "S3_ACCESS_KEY_ID":
     lambda: os.environ.get("S3_ACCESS_KEY", None),
@@ -150,7 +131,6 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: os.environ.get("S3_SECRET_ACCESS_KEY", None),
     "S3_ENDPOINT_URL":
     lambda: os.environ.get("S3_ENDPOINT_URL", None),
-
     # Usage stats collection
     "VLLM_USAGE_STATS_SERVER":
     lambda: os.environ.get("VLLM_USAGE_STATS_SERVER", "https://stats.vllm.ai"),
@@ -161,7 +141,6 @@ environment_variables: Dict[str, Callable[[], Any]] = {
         "DO_NOT_TRACK", None) or "0") == "1",
     "VLLM_USAGE_SOURCE":
     lambda: os.environ.get("VLLM_USAGE_SOURCE", "production"),
-
     # Logging configuration
     # If set to 0, vllm will not configure logging
     # If set to 1, vllm will configure logging using the default configuration
@@ -170,13 +149,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: int(os.getenv("VLLM_CONFIGURE_LOGGING", "1")),
     "VLLM_LOGGING_CONFIG_PATH":
     lambda: os.getenv("VLLM_LOGGING_CONFIG_PATH"),
-
     # Trace function calls
     # If set to 1, vllm will trace function calls
     # Useful for debugging
     "VLLM_TRACE_FUNCTION":
     lambda: int(os.getenv("VLLM_TRACE_FUNCTION", "0")),
-
     # Backend for attention computation
     # Available options:
     # - "TORCH_SDPA": use torch.nn.MultiheadAttention
@@ -185,18 +162,15 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # - "ROCM_FLASH": use ROCmFlashAttention
     "VLLM_ATTENTION_BACKEND":
     lambda: os.getenv("VLLM_ATTENTION_BACKEND", None),
-
     # CPU key-value cache space
     # default is 4GB
     "VLLM_CPU_KVCACHE_SPACE":
     lambda: int(os.getenv("VLLM_CPU_KVCACHE_SPACE", "0")),
-
     # If the env var is set, it uses the Ray's compiled DAG API
     # which optimizes the control plane overhead.
     # Run vLLM with VLLM_USE_RAY_COMPILED_DAG=1 to enable it.
     "VLLM_USE_RAY_COMPILED_DAG":
     lambda: bool(os.getenv("VLLM_USE_RAY_COMPILED_DAG", 0)),
-
     # Use dedicated multiprocess context for workers.
     # Both spawn and fork work
     "VLLM_WORKER_MULTIPROC_METHOD":
