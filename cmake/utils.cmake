@@ -99,7 +99,7 @@ function (get_torch_gpu_compiler_flags OUT_GPU_FLAGS GPU_LANG)
       "Failed to determine torch nvcc compiler flags")
 
     if (CUDA_VERSION VERSION_GREATER_EQUAL 11.8)
-      list(APPEND GPU_FLAGS "-DENABLE_FP8_E5M2")
+      list(APPEND GPU_FLAGS "-DENABLE_FP8")
     endif()
     if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
       list(REMOVE_ITEM GPU_FLAGS
@@ -119,7 +119,7 @@ function (get_torch_gpu_compiler_flags OUT_GPU_FLAGS GPU_LANG)
 
     list(APPEND GPU_FLAGS
       "-DUSE_ROCM"
-      "-DENABLE_FP8_E4M3"
+      "-DENABLE_FP8"
       "-U__HIP_NO_HALF_CONVERSIONS__"
       "-U__HIP_NO_HALF_OPERATORS__"
       "-fno-gpu-rdc")
@@ -155,8 +155,14 @@ macro(override_gpu_arches GPU_ARCHES GPU_LANG GPU_SUPPORTED_ARCHES)
     # Find the intersection of the supported + detected architectures to
     # set the module architecture flags.
     #
+    if (${GPU_ARCHES})
+      set(_HIP_ARCHITECTURES ${GPU_ARCHES})
+    else()
+      set(_HIP_ARCHITECTURES ${CMAKE_HIP_ARCHITECTURES})
+    endif()
+    
     set(${GPU_ARCHES})
-    foreach (_ARCH ${CMAKE_HIP_ARCHITECTURES})
+    foreach (_ARCH ${_HIP_ARCHITECTURES})
       if (_ARCH IN_LIST _GPU_SUPPORTED_ARCHES_LIST)
         list(APPEND ${GPU_ARCHES} ${_ARCH})
       endif()
@@ -164,7 +170,7 @@ macro(override_gpu_arches GPU_ARCHES GPU_LANG GPU_SUPPORTED_ARCHES)
 
     if(NOT ${GPU_ARCHES})
       message(FATAL_ERROR
-        "None of the detected ROCm architectures: ${CMAKE_HIP_ARCHITECTURES} is"
+        "None of the detected ROCm architectures: ${_HIP_ARCHITECTURES} is"
         " supported. Supported ROCm architectures are: ${_GPU_SUPPORTED_ARCHES_LIST}.")
     endif()
 
