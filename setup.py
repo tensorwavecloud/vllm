@@ -35,7 +35,8 @@ VLLM_GPU_ARCHES = envs.VLLM_GPU_ARCHES
 
 # vLLM only supports Linux platform
 assert sys.platform.startswith(
-    "linux"), "vLLM only supports Linux platform (including WSL)."
+    "linux"
+), "vLLM only supports Linux platform (including WSL)."
 
 MAIN_CUDA_VERSION = "12.1"
 
@@ -54,14 +55,13 @@ def is_ninja_available() -> bool:
 
 def remove_prefix(text, prefix):
     if text.startswith(prefix):
-        return text[len(prefix):]
+        return text[len(prefix) :]
     return text
 
 
 class CMakeExtension(Extension):
-
     def __init__(self, name: str, cmake_lists_dir: str = ".", **kwa) -> None:
-        super().__init__(name, sources=[], **kwa)
+        super().__init__(name, sources=[], py_limited_api=True, **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
 
@@ -97,8 +97,8 @@ class cmake_build_ext(build_ext):
             if nvcc_threads is not None:
                 nvcc_threads = int(nvcc_threads)
                 logger.info(
-                    "Using NVCC_THREADS=%d as the number of nvcc threads.",
-                    nvcc_threads)
+                    "Using NVCC_THREADS=%d as the number of nvcc threads.", nvcc_threads
+                )
             else:
                 nvcc_threads = 1
             num_jobs = max(1, num_jobs // nvcc_threads)
@@ -123,8 +123,7 @@ class cmake_build_ext(build_ext):
 
         # where .so files will be written, should be the same for all extensions
         # that use the same CMakeLists.txt.
-        outdir = os.path.abspath(
-            os.path.dirname(self.get_ext_fullpath(ext.name)))
+        outdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
         cmake_args = [
             "-DCMAKE_BUILD_TYPE={}".format(cfg),
@@ -142,6 +141,7 @@ class cmake_build_ext(build_ext):
             cmake_args += [
                 "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache",
                 "-DCMAKE_CUDA_COMPILER_LAUNCHER=sccache",
+                "-DCMAKE_C_COMPILER_LAUNCHER=sccache",
             ]
         elif is_ccache_available():
             cmake_args += [
@@ -173,7 +173,6 @@ class cmake_build_ext(build_ext):
         else:
             # Default build tool to whatever cmake picks.
             build_tool = []
-
         subprocess.check_call(
             ["cmake", ext.cmake_lists_dir, *build_tool, *cmake_args],
             cwd=self.build_temp,
@@ -190,33 +189,33 @@ class cmake_build_ext(build_ext):
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)
 
+        targets = []
         # Build all the extensions
         for ext in self.extensions:
             self.configure(ext)
+            targets.append(remove_prefix(ext.name, "vllm."))
 
-            ext_target_name = remove_prefix(ext.name, "vllm.")
-            num_jobs, _ = self.compute_num_jobs()
+        num_jobs, _ = self.compute_num_jobs()
 
-            build_args = [
-                "--build",
-                ".",
-                "--target",
-                ext_target_name,
-                "-j",
-                str(num_jobs),
-            ]
+        build_args = [
+            "--build",
+            ".",
+            f"-j={num_jobs}",
+            *[f"--target={name}" for name in targets],
+        ]
 
-            subprocess.check_call(["cmake", *build_args], cwd=self.build_temp)
+        subprocess.check_call(["cmake", *build_args], cwd=self.build_temp)
 
 
 def _is_cuda() -> bool:
-    return (VLLM_TARGET_DEVICE == "cuda" and torch.version.cuda is not None
-            and not _is_neuron())
+    has_cuda = torch.version.cuda is not None
+    return VLLM_TARGET_DEVICE == "cuda" and has_cuda and not (_is_neuron() or _is_tpu())
 
 
 def _is_hip() -> bool:
-    return (VLLM_TARGET_DEVICE == "cuda"
-            or VLLM_TARGET_DEVICE == "rocm") and torch.version.hip is not None
+    return (
+        VLLM_TARGET_DEVICE == "cuda" or VLLM_TARGET_DEVICE == "rocm"
+    ) and torch.version.hip is not None
 
 
 def _is_neuron() -> bool:
@@ -225,11 +224,19 @@ def _is_neuron() -> bool:
         subprocess.run(["neuron-ls"], capture_output=True, check=True)
     except (FileNotFoundError, PermissionError, subprocess.CalledProcessError):
         torch_neuronx_installed = False
-    return torch_neuronx_installed or envs.VLLM_BUILD_WITH_NEURON
+    return torch_neuronx_installed or VLLM_TARGET_DEVICE == "neuron"
+
+
+def _is_tpu() -> bool:
+    return VLLM_TARGET_DEVICE == "tpu"
 
 
 def _is_cpu() -> bool:
     return VLLM_TARGET_DEVICE == "cpu"
+
+
+def _build_custom_ops() -> bool:
+    return _is_cuda() or _is_hip() or _is_cpu()
 
 
 def _install_punica() -> bool:
@@ -264,8 +271,7 @@ def get_neuronxcc_version():
     import sysconfig
 
     site_dir = sysconfig.get_paths()["purelib"]
-    version_file = os.path.join(site_dir, "neuronxcc", "version",
-                                "__init__.py")
+    version_file = os.path.join(site_dir, "neuronxcc", "version", "__init__.py")
 
     # Check if the command was executed successfully
     with open(version_file, "rt") as fp:
@@ -286,8 +292,9 @@ def get_nvcc_cuda_version() -> Version:
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
     assert CUDA_HOME is not None, "CUDA_HOME is not set"
-    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"],
-                                          universal_newlines=True)
+    nvcc_output = subprocess.check_output(
+        [CUDA_HOME + "/bin/nvcc", "-V"], universal_newlines=True
+    )
     output = nvcc_output.split()
     release_idx = output.index("release") + 1
     nvcc_cuda_version = parse(output[release_idx].split(",")[0])
@@ -304,15 +311,16 @@ def find_version(filepath: str) -> str:
     Adapted from https://github.com/ray-project/ray/blob/0b190ee1160eeca9796bc091e07eaebf4c85b511/python/setup.py
     """
     with open(filepath) as fp:
-        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]",
-                                  fp.read(), re.M)
+        version_match = re.search(
+            r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M
+        )
         if version_match:
             return version_match.group(1)
         raise RuntimeError("Unable to find version string.")
 
 
 def get_vllm_version() -> str:
-    version = find_version(get_path("vllm", "__init__.py"))
+    version = find_version(get_path("vllm", "version.py"))
 
     if _is_cuda():
         cuda_version = str(get_nvcc_cuda_version())
@@ -331,6 +339,8 @@ def get_vllm_version() -> str:
         if neuron_version != MAIN_CUDA_VERSION:
             neuron_version_str = neuron_version.replace(".", "")[:3]
             version += f"+neuron{neuron_version_str}"
+    elif _is_tpu():
+        version += "+tpu"
     elif _is_cpu():
         version += "+cpu"
     else:
@@ -367,11 +377,9 @@ def get_requirements() -> List[str]:
         cuda_major, cuda_minor = torch.version.cuda.split(".")
         modified_requirements = []
         for req in requirements:
-            if "vllm-nccl-cu12" in req:
-                req = req.replace("vllm-nccl-cu12",
-                                  f"vllm-nccl-cu{cuda_major}")
-            elif "vllm-flash-attn" in req and not (cuda_major == "12"
-                                                   and cuda_minor == "1"):
+            if "vllm-flash-attn" in req and not (
+                cuda_major == "12" and cuda_minor == "1"
+            ):
                 # vllm-flash-attn is built only for CUDA 12.1.
                 # Skip for other versions.
                 continue
@@ -381,28 +389,27 @@ def get_requirements() -> List[str]:
         requirements = _read_requirements("requirements-rocm.txt")
     elif _is_neuron():
         requirements = _read_requirements("requirements-neuron.txt")
+    elif _is_tpu():
+        requirements = _read_requirements("requirements-tpu.txt")
     elif _is_cpu():
         requirements = _read_requirements("requirements-cpu.txt")
     else:
-        raise ValueError(
-            "Unsupported platform, please use CUDA, ROCm, Neuron, or CPU.")
+        raise ValueError("Unsupported platform, please use CUDA, ROCm, Neuron, or CPU.")
     return requirements
 
 
 ext_modules = []
 
-if _is_cuda():
+if _is_cuda() or _is_hip():
     ext_modules.append(CMakeExtension(name="vllm._moe_C"))
 
-if not _is_neuron():
+if _build_custom_ops():
     ext_modules.append(CMakeExtension(name="vllm._C"))
 
     if _install_punica():
         ext_modules.append(CMakeExtension(name="vllm._punica_C"))
 
-package_data = {
-    "vllm": ["py.typed", "model_executor/layers/fused_moe/configs/*.json"]
-}
+package_data = {"vllm": ["py.typed", "model_executor/layers/fused_moe/configs/*.json"]}
 if envs.VLLM_USE_PRECOMPILED:
     ext_modules = []
     package_data["vllm"].append("*.so")
@@ -412,8 +419,10 @@ setup(
     version=get_vllm_version(),
     author="vLLM Team",
     license="Apache 2.0",
-    description=("A high-throughput and memory-efficient inference and "
-                 "serving engine for LLMs"),
+    description=(
+        "A high-throughput and memory-efficient inference and "
+        "serving engine for LLMs"
+    ),
     long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/vllm-project/vllm",
@@ -429,14 +438,15 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    packages=find_packages(exclude=("benchmarks", "csrc", "docs", "examples",
-                                    "tests*")),
+    packages=find_packages(
+        exclude=("benchmarks", "csrc", "docs", "examples", "tests*")
+    ),
     python_requires=">=3.8",
     install_requires=get_requirements(),
     ext_modules=ext_modules,
     extras_require={
-        "tensorizer": ["tensorizer==2.9.0"],
+        "tensorizer": ["tensorizer>=2.9.0"],
     },
-    cmdclass={"build_ext": cmake_build_ext} if not _is_neuron() else {},
+    cmdclass={"build_ext": cmake_build_ext} if _build_custom_ops() else {},
     package_data=package_data,
 )
